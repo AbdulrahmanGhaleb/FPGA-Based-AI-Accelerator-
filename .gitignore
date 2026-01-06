@@ -1,0 +1,19 @@
+# Quartus Prime
+db/
+incremental_db/
+output_files/
+*.rpt
+*.sof
+*.qdb
+*.jdi
+*.smsg
+*.summary
+
+# ModelSim / Questa
+work/
+vsim.wlf
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
