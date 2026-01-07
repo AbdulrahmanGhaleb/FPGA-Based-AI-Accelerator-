@@ -13,6 +13,8 @@ The project demonstrates an **end-to-end embedded neural-network inference syste
 The developed inference engine is **generic and reusable** for many embedded AI use cases.
 For demonstration and validation, it is applied to a **weather comfort classification system**, where **temperature and humidity inputs** are processed to produce a comfort classification.
 
+![System Block Diagram](SystemArchitecture.png)
+
 ---
 
 # Neural Network Details
