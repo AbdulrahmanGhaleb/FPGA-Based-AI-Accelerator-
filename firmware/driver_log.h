@@ -23,6 +23,14 @@ typedef enum {
 #define LOGI(fmt, ...) LOG_PRINTF(LOG_INFO,  "[INF] " fmt, ##__VA_ARGS__)
 #define LOGD(fmt, ...) LOG_PRINTF(LOG_DEBUG, "[DBG] " fmt, ##__VA_ARGS__)
 
+#ifndef LOG_PERF
+#define LOG_PERF 1
+#endif
+
+#define LOGP(fmt, ...) do { \
+  if (LOG_PERF) neorv32_uart0_printf("[PERF] " fmt, ##__VA_ARGS__); \
+} while (0)
+
 //scaled-print helpers 
 int32_t float_to_scaled_int(float x, float scale);
 void    print_f_scaled(const char* name, float x, int32_t scale, const char* scale_tag);

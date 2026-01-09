@@ -21,3 +21,6 @@ typedef struct { //statistics that are used in debugging
 void nn_stats_init(nn_stats_t* st);
 
 int nn_infer_fixed_accel(float T, float H, float* out_prob, int* out_cls, nn_stats_t* st); //*out_prob → sigmoid output (0–1), *out_cls → final classification (0 or 1)
+//Performance measurement (isolated) run functions
+int nn_infer_fixed_accel_perf(float T, float H, float* out_prob, int* out_cls, nn_stats_t* st);
+int nn_infer_fixed_cpu_perf(float T, float H, float* out_prob, int* out_cls, nn_stats_t* st);

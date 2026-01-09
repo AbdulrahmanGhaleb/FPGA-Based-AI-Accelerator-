@@ -14,6 +14,19 @@
 
 static inline int round_up4(int x) { return (x + 3) & ~3; } //Bitwise AND clears the lowest 2 bits forcing number to become multiple of 4
 
+static void gemm_i16_cpu(const int16_t* A, int M, int K, //This function has been introduced purely for performacne metrics isolation to allow accurate measurement
+                         const int16_t* B, int N, int32_t* C) {
+  for (int i = 0; i < M; i++) {
+    for (int j = 0; j < N; j++) {
+      int32_t acc = 0;
+      for (int k = 0; k < K; k++) {
+        acc += (int32_t)A[i*K + k] * (int32_t)B[k*N + j];
+      }
+      C[i*N + j] = acc;
+    }
+  }
+}
+
 
 
 // used in quantization and requantization
@@ -308,6 +321,242 @@ int nn_infer_fixed_accel(float T, float H, float* out_prob, int* out_cls, nn_sta
     print_f_scaled("sigmoid(z4)", y0, 100000, "x1e-5");
   }
 #endif
+
+  int cls = (y0 >= 0.5f) ? 1 : 0;
+  *out_prob = y0;
+  *out_cls  = cls;
+
+  return 0;
+}
+
+//Below are accelerator and cpu runs repeated but without uart prints, initializations or any other operation that would add cycles that are not related to the Prediction process
+
+int nn_infer_fixed_accel_perf(float T, float H, float* out_prob, int* out_cls, nn_stats_t* st) {
+  float x0_f[IN_DIM];
+  x0_f[0] = T / 35.0f;
+  x0_f[1] = H / 100.0f;
+
+  int16_t x0_q[IN_DIM];
+  for (int i = 0; i < IN_DIM; i++) x0_q[i] = quant_f_to_i16(x0_f[i], A0_S);
+
+  const int L1_IN_PAD = round_up4(IN_DIM); // 4
+  int16_t x0_q_pad[4];
+  pad_vec_i16(x0_q, IN_DIM, x0_q_pad, L1_IN_PAD);
+
+  int16_t W1_q_pad[4 * 16];
+  pad_mat_i16(W1_q, IN_DIM, L1_DIM, W1_q_pad, L1_IN_PAD, L1_DIM);
+
+  int16_t A1[4 * 4] = {0};
+  for (int c = 0; c < 4; c++) A1[0*4 + c] = x0_q_pad[c];
+
+  int32_t C1[4 * 16];
+  cfs_rc_t rc = accel_gemm_i16(A1, 4, 4, W1_q_pad, 16, C1);
+  if (rc != CFS_OK) { if (st) st->accel_timeouts++; return -1; }
+
+  int32_t z1_q[16];
+  for (int j = 0; j < 16; j++) z1_q[j] = C1[0*16 + j];
+
+  int16_t a1_q[16];
+  for (int j = 0; j < L1_DIM; j++) {
+    int32_t bq = bias_f_to_i32(b1[j], A0_S, s1);
+    int32_t zq = z1_q[j] + bq;
+    zq = relu_i32(zq);
+    int16_t out = requant_i32_to_i16(zq, A0_S, s1, A1_S);
+    a1_q[j] = out;
+    if (st && (out == 32767 || out == -32768)) st->a1_sat++;
+  }
+
+  int16_t A2[4 * 16] = {0};
+  for (int c = 0; c < 16; c++) A2[0*16 + c] = a1_q[c];
+
+  int32_t C2[4 * 16];
+  rc = accel_gemm_i16(A2, 4, 16, W2_q, 16, C2);
+  if (rc != CFS_OK) { if (st) st->accel_timeouts++; return -1; }
+
+  int32_t z2_q[16];
+  for (int j = 0; j < 16; j++) z2_q[j] = C2[0*16 + j];
+
+  int16_t a2_q[16];
+  for (int j = 0; j < L2_DIM; j++) {
+    int32_t bq = bias_f_to_i32(b2[j], A1_S, s2);
+    int32_t zq = z2_q[j] + bq;
+    zq = relu_i32(zq);
+    int16_t out = requant_i32_to_i16(zq, A1_S, s2, A2_S);
+    a2_q[j] = out;
+    if (st && (out == 32767 || out == -32768)) st->a2_sat++;
+  }
+
+  int16_t A3[4 * 16] = {0};
+  for (int c = 0; c < 16; c++) A3[0*16 + c] = a2_q[c];
+
+  int32_t C3[4 * 8];
+  rc = accel_gemm_i16(A3, 4, 16, W3_q, 8, C3);
+  if (rc != CFS_OK) { if (st) st->accel_timeouts++; return -1; }
+
+  int32_t z3_q[8];
+  for (int j = 0; j < 8; j++) z3_q[j] = C3[0*8 + j];
+
+  int16_t a3_q[8];
+  for (int j = 0; j < L3_DIM; j++) {
+    int32_t bq = bias_f_to_i32(b3[j], A2_S, s3);
+    int32_t zq = z3_q[j] + bq;
+    zq = relu_i32(zq);
+    int16_t out = requant_i32_to_i16(zq, A2_S, s3, A3_S);
+    a3_q[j] = out;
+    if (st && (out == 32767 || out == -32768)) st->a3_sat++;
+  }
+
+  const int L4_OUT_PAD = round_up4(OUT_DIM); // 4
+  int16_t W4_q_pad[8 * 4];
+  pad_mat_i16(W4_q, 8, 1, W4_q_pad, 8, 4);
+
+  int16_t A4[4 * 8] = {0};
+  for (int c = 0; c < 8; c++) A4[0*8 + c] = a3_q[c];
+
+  int32_t C4[4 * 4];
+  rc = accel_gemm_i16(A4, 4, 8, W4_q_pad, 4, C4);
+  if (rc != CFS_OK) { if (st) st->accel_timeouts++; return -1; }
+
+  int32_t z4_q_pad0 = C4[0*4 + 0];
+
+  int32_t b4q0 = bias_f_to_i32(b4[0], A3_S, s4);
+  int32_t z4q0 = z4_q_pad0 + b4q0;
+
+  float z4_f = (float)z4q0 * (A3_S * s4);
+  float y0   = sigmoid_f(z4_f);
+
+  if (st) {
+    int16_t mn, mx;
+
+    vec_minmax_i16(a1_q, 16, &mn, &mx);
+    if (st->runs == 0) { st->a1_min = mn; st->a1_max = mx; }
+    else { if (mn < st->a1_min) st->a1_min = mn; if (mx > st->a1_max) st->a1_max = mx; }
+
+    vec_minmax_i16(a2_q, 16, &mn, &mx);
+    if (st->runs == 0) { st->a2_min = mn; st->a2_max = mx; }
+    else { if (mn < st->a2_min) st->a2_min = mn; if (mx > st->a2_max) st->a2_max = mx; }
+
+    vec_minmax_i16(a3_q, 8, &mn, &mx);
+    if (st->runs == 0) { st->a3_min = mn; st->a3_max = mx; }
+    else { if (mn < st->a3_min) st->a3_min = mn; if (mx > st->a3_max) st->a3_max = mx; }
+
+    st->runs++;
+  }
+
+  int cls = (y0 >= 0.5f) ? 1 : 0;
+  *out_prob = y0;
+  *out_cls  = cls;
+
+  return 0;
+}
+
+int nn_infer_fixed_cpu_perf(float T, float H, float* out_prob, int* out_cls, nn_stats_t* st) {
+  float x0_f[IN_DIM];
+  x0_f[0] = T / 35.0f;
+  x0_f[1] = H / 100.0f;
+
+  int16_t x0_q[IN_DIM];
+  for (int i = 0; i < IN_DIM; i++) x0_q[i] = quant_f_to_i16(x0_f[i], A0_S);
+
+  const int L1_IN_PAD = round_up4(IN_DIM); // 4
+  int16_t x0_q_pad[4];
+  pad_vec_i16(x0_q, IN_DIM, x0_q_pad, L1_IN_PAD);
+
+  int16_t W1_q_pad[4 * 16];
+  pad_mat_i16(W1_q, IN_DIM, L1_DIM, W1_q_pad, L1_IN_PAD, L1_DIM);
+
+  int16_t A1[4 * 4] = {0};
+  for (int c = 0; c < 4; c++) A1[0*4 + c] = x0_q_pad[c];
+
+  int32_t C1[4 * 16];
+  gemm_i16_cpu(A1, 4, 4, W1_q_pad, 16, C1);
+
+  int32_t z1_q[16];
+  for (int j = 0; j < 16; j++) z1_q[j] = C1[0*16 + j];
+
+  int16_t a1_q[16];
+  for (int j = 0; j < L1_DIM; j++) {
+    int32_t bq = bias_f_to_i32(b1[j], A0_S, s1);
+    int32_t zq = z1_q[j] + bq;
+    zq = relu_i32(zq);
+    int16_t out = requant_i32_to_i16(zq, A0_S, s1, A1_S);
+    a1_q[j] = out;
+    if (st && (out == 32767 || out == -32768)) st->a1_sat++;
+  }
+
+  int16_t A2[4 * 16] = {0};
+  for (int c = 0; c < 16; c++) A2[0*16 + c] = a1_q[c];
+
+  int32_t C2[4 * 16];
+  gemm_i16_cpu(A2, 4, 16, W2_q, 16, C2);
+
+  int32_t z2_q[16];
+  for (int j = 0; j < 16; j++) z2_q[j] = C2[0*16 + j];
+
+  int16_t a2_q[16];
+  for (int j = 0; j < L2_DIM; j++) {
+    int32_t bq = bias_f_to_i32(b2[j], A1_S, s2);
+    int32_t zq = z2_q[j] + bq;
+    zq = relu_i32(zq);
+    int16_t out = requant_i32_to_i16(zq, A1_S, s2, A2_S);
+    a2_q[j] = out;
+    if (st && (out == 32767 || out == -32768)) st->a2_sat++;
+  }
+
+  int16_t A3[4 * 16] = {0};
+  for (int c = 0; c < 16; c++) A3[0*16 + c] = a2_q[c];
+
+  int32_t C3[4 * 8];
+  gemm_i16_cpu(A3, 4, 16, W3_q, 8, C3);
+
+  int32_t z3_q[8];
+  for (int j = 0; j < 8; j++) z3_q[j] = C3[0*8 + j];
+
+  int16_t a3_q[8];
+  for (int j = 0; j < L3_DIM; j++) {
+    int32_t bq = bias_f_to_i32(b3[j], A2_S, s3);
+    int32_t zq = z3_q[j] + bq;
+    zq = relu_i32(zq);
+    int16_t out = requant_i32_to_i16(zq, A2_S, s3, A3_S);
+    a3_q[j] = out;
+    if (st && (out == 32767 || out == -32768)) st->a3_sat++;
+  }
+
+  const int L4_OUT_PAD = round_up4(OUT_DIM); // 4
+  int16_t W4_q_pad[8 * 4];
+  pad_mat_i16(W4_q, 8, 1, W4_q_pad, 8, 4);
+
+  int16_t A4[4 * 8] = {0};
+  for (int c = 0; c < 8; c++) A4[0*8 + c] = a3_q[c];
+
+  int32_t C4[4 * 4];
+  gemm_i16_cpu(A4, 4, 8, W4_q_pad, 4, C4);
+
+  int32_t z4_q_pad0 = C4[0*4 + 0];
+
+  int32_t b4q0 = bias_f_to_i32(b4[0], A3_S, s4);
+  int32_t z4q0 = z4_q_pad0 + b4q0;
+
+  float z4_f = (float)z4q0 * (A3_S * s4);
+  float y0   = sigmoid_f(z4_f);
+
+  if (st) {
+    int16_t mn, mx;
+
+    vec_minmax_i16(a1_q, 16, &mn, &mx);
+    if (st->runs == 0) { st->a1_min = mn; st->a1_max = mx; }
+    else { if (mn < st->a1_min) st->a1_min = mn; if (mx > st->a1_max) st->a1_max = mx; }
+
+    vec_minmax_i16(a2_q, 16, &mn, &mx);
+    if (st->runs == 0) { st->a2_min = mn; st->a2_max = mx; }
+    else { if (mn < st->a2_min) st->a2_min = mn; if (mx > st->a2_max) st->a2_max = mx; }
+
+    vec_minmax_i16(a3_q, 8, &mn, &mx);
+    if (st->runs == 0) { st->a3_min = mn; st->a3_max = mx; }
+    else { if (mn < st->a3_min) st->a3_min = mn; if (mx > st->a3_max) st->a3_max = mx; }
+
+    st->runs++;
+  }
 
   int cls = (y0 >= 0.5f) ? 1 : 0;
   *out_prob = y0;
