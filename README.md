@@ -227,7 +227,6 @@ In addition to functional validation, a **performance instrumentation mode (PERF
 When enabled:
 
 * Hardware cycle counters are used to measure total execution cycles
-* Inference is executed for a configurable number of iterations to reduce measurement noise
 * Performance metrics are computed and reported via UART, including:
 
   * Total cycle count
