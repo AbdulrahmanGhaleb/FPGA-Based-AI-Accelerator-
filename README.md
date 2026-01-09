@@ -244,18 +244,48 @@ By normalizing results using **cycles per MAC**, the performance evaluation rema
 
 ---
 
-# Results
+## Results
 
-* Accelerator outputs **matched CPU reference results exactly**
-* No numerical discrepancies were observed across:
+### Functional Correctness
 
-  * Individual inference runs
-  * Stress-test iterations
-* This validates:
+Accelerator outputs matched the CPU reference results **exactly**.
 
-  * Correct tiling and accumulation
-  * Correct fixed-point quantization strategy
-  * Correct hardware–software integration
+No numerical discrepancies were observed across:
+
+* Individual inference runs
+* Stress-test iterations
+
+This validates:
+
+* Correct tiling and accumulation behavior
+* Correct fixed-point quantization strategy
+* Correct hardware–software integration via NEORV32 CFS
+
+---
+
+### Performance
+
+A dedicated **`[PERF]` UART mode** was added to measure cycle-accurate performance using the RISC-V `MCYCLE` counter.
+Measurements were taken over **1000 inference iterations** to ensure stable and repeatable results.
+
+```
+[PERF] Mode: ACCEL
+[PERF] Iterations: 1000
+[PERF] Total cycles: 541,559,011
+[PERF] Cycles / inference: 541,559
+[PERF] Cycles / MAC: 282.06
+
+[PERF] Mode: CPU
+[PERF] Iterations: 1000
+[PERF] Total cycles: 1,453,117,011
+[PERF] Cycles / inference: 1,453,117
+[PERF] Cycles / MAC: 756.83
+
+[PERF] Speedup: 2.68×
+```
+
+The accelerator achieves a **2.68× speedup** over the CPU-only implementation, reducing both **total execution cycles** and **cycles per MAC**.
+Reported values include **full system overhead** (control, memory access, accumulation, and write-back), reflecting realistic end-to-end performance rather than isolated compute throughput.
 
 ---
 
