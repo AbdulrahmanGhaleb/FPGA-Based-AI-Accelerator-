@@ -220,6 +220,31 @@ This mode provides additional confidence in:
 
 ---
 
+## Performance Measurement (PERF Mode)
+
+In addition to functional validation, a **performance instrumentation mode (PERF)** was introduced to quantitatively evaluate execution efficiency.
+
+When enabled:
+
+* Hardware cycle counters are used to measure total execution cycles
+* Inference is executed for a configurable number of iterations to reduce measurement noise
+* Performance metrics are computed and reported via UART, including:
+
+  * Total cycle count
+  * Cycles per inference
+  * Cycles per MAC (Multiply–Accumulate)
+  * Accelerator speedup relative to CPU execution
+
+PERF mode is designed to be:
+
+* Non-intrusive (no impact on functional correctness)
+* Compile-time configurable
+* Consistent across CPU and accelerator runs
+
+By normalizing results using **cycles per MAC**, the performance evaluation remains independent of network size and provides a fair, architecture-agnostic comparison between software and hardware execution.
+
+---
+
 # Results
 
 * Accelerator outputs **matched CPU reference results exactly**
