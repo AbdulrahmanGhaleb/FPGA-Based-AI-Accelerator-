@@ -3,10 +3,10 @@
 #include <neorv32.h>
 
 typedef enum {
-  LOG_ERROR = 0, //Something is wrong and likely prevents correct operation.
-  LOG_WARN  = 1, //Something unusual happened but the program can continue.
-  LOG_INFO  = 2, //Normal high-level messages 
-  LOG_DEBUG = 3 //Very detailed internal information for development only.
+  LOG_ERROR = 0, 
+  LOG_WARN  = 1, 
+  LOG_INFO  = 2, 
+  LOG_DEBUG = 3 
 } log_level_t;
 
 // Compile-time default

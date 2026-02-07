@@ -7,19 +7,19 @@ cfs_rc_t cfs_wait_complete(uint32_t timeout_no_busy, uint32_t timeout_stuck_busy
   // Wait until BUSY is observed 
   for (uint32_t t = 0; t < timeout_no_busy; t++) {
     s = REG_STATUS;
-    if (s & ST_BUSY_MASK) { saw_busy = 1; break; } //Polling status register, sets saw_busy to 1 and breaks from the loop and waits until busy appears
+    if (s & ST_BUSY_MASK) { saw_busy = 1; break; } 
   }
-  if (!saw_busy) { // the case busy never appears
+  if (!saw_busy) { 
     return CFS_TIMEOUT_NO_BUSY;
   }
 
   // Wait while BUSY remains high
   for (uint32_t t = 0; t < timeout_stuck_busy; t++) {
     s = REG_STATUS;
-    if ((s & ST_BUSY_MASK) == 0) return CFS_OK; //busy is no longer asserted and operation is success
+    if ((s & ST_BUSY_MASK) == 0) return CFS_OK; 
   }
 
-  return CFS_TIMEOUT_STUCK_BUSY; //when busy stays high the whole time where it never reached the previous if condtion
+  return CFS_TIMEOUT_STUCK_BUSY; 
 }
 
 cfs_rc_t accel_gemm_i16(const int16_t* A, int M, int K,

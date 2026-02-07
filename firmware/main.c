@@ -2,10 +2,14 @@
 
 #include "driver_log.h"
 #include "nn_fixed.h"
+#include "comfort_test_set.h"
+
 
 static inline uint32_t rdcycle(void) {
   return neorv32_cpu_csr_read(CSR_MCYCLE);
 }
+
+#define TEST_INPUT_Q_SCALE (1 << 8)
 
 // ------------------------------
 // Performance configuration
@@ -25,37 +29,20 @@ static inline uint32_t rdcycle(void) {
 #define MACS_L4 (4u * 8u * 4u)
 #define MACS_PER_INFER (MACS_L1 + MACS_L2 + MACS_L3 + MACS_L4)
 
-
 // ------------------------------
-// Stress test configuration
+// Multi-run (accuracy + perf) configuration
 // ------------------------------
-#ifndef NN_STRESS
-#define NN_STRESS 0
+#ifndef NN_ACCURACY_TEST
+#define NN_ACCURACY_TEST 1
 #endif
 
-#ifndef STRESS_ITERS
-#define STRESS_ITERS 200
-#endif
-
-// LCG for input randomizer for stress test
-static uint32_t lcg_state = 0x12345678u;
-static uint32_t lcg_u32(void) {
-  lcg_state = lcg_state * 1664525u + 1013904223u;
-  return lcg_state;
-}
-static float lcg_range(float lo, float hi) {
-  uint32_t r = lcg_u32();
-  // Use top 16 bits as [0..1)
-  float u = (float)((r >> 16) & 0xFFFFu) / 65536.0f;
-  return lo + (hi - lo) * u;
-}
 
 static void print_run_header(void) {
-  LOGI("NN Inference (Fixed-Point + Accel) dims: 2-16-16-8-1  tile:4x4  pad:ON\n");
+  LOGD("NN Inference\n");
 #if (LOG_LEVEL >= LOG_DEBUG)
-  LOGI("Log level: DEBUG\n");
+  LOGD("Log level: DEBUG\n");
 #else
-  LOGI("Log level: INFO\n");
+  LOGD("Log level: INFO\n");
 #endif
 }
 
@@ -68,80 +55,51 @@ int main(void) {
   nn_stats_t st;
   nn_stats_init(&st);
 
-#if NN_STRESS
-  LOGI("STRESS mode: iters=%d\n", (int)STRESS_ITERS);
+#if NN_ACCURACY_TEST
 
-  for (int it = 0; it < STRESS_ITERS; it++) {
-    
-    float T = lcg_range(15.0f, 40.0f);
-    float H = lcg_range(10.0f, 95.0f);
+  LOGD("MULTI-RUN: accuracy + performance, samples=%d\n", (int)TEST_SET_SIZE);
+  int TP = 0, TN = 0, FP = 0, FN = 0;
+  int correct = 0;
+
+  for (int i = 0; i < TEST_SET_SIZE; i++) {
+    float T = (float)test_T_q[i] / (float)TEST_INPUT_Q_SCALE;
+    float H = (float)test_H_q[i] / (float)TEST_INPUT_Q_SCALE;
 
     float prob = 0.0f;
     int cls = 0;
 
     int rc = nn_infer_fixed_accel(T, H, &prob, &cls, &st);
     if (rc != 0) {
-      LOGE("Inference failed at iter=%d (timeouts=%d)\n", it, (int)st.accel_timeouts);
+      LOGE("ACC TEST failed at i=%d (timeouts=%d)\n",
+           i, (int)st.accel_timeouts);
       break;
     }
 
-    // Print checkpoint lines 
-    if ((it % 50) == 0) {
-      LOGI("iter=%d T=%d(x1e-2) H=%d(x1e-2) prob=%d(x1e-5) cls=%d\n",
-           it,
-           (int)float_to_scaled_int(T, 100.0f),
-           (int)float_to_scaled_int(H, 100.0f),
-           (int)float_to_scaled_int(prob, 100000.0f),
-           cls);
+    if (cls == test_label[i]) {
+      correct++;
     }
+    if (cls == 1 && test_label[i] == 1) TP++;
+    else if (cls == 0 && test_label[i] == 0) TN++;
+    else if (cls == 1 && test_label[i] == 0) FP++;
+    else if (cls == 0 && test_label[i] == 1) FN++;
+    /*LOGI("CONFUSION: TP=%d TN=%d FP=%d FN=%d\n", TP, TN, FP, FN);*/
   }
 
-  LOGI("STRESS DONE runs=%d timeouts=%d maxdiff(L2/L3/L4)=%d/%d/%d\n",
-       (int)st.runs, (int)st.accel_timeouts,
-       (int)st.max_abs_diff_l2, (int)st.max_abs_diff_l3, (int)st.max_abs_diff_l4);
-
-  LOGI("Activation ranges (raw i16): a1[%d..%d] a2[%d..%d] a3[%d..%d]\n",
-       (int)st.a1_min, (int)st.a1_max,
-       (int)st.a2_min, (int)st.a2_max,
-       (int)st.a3_min, (int)st.a3_max);
-
-  LOGI("Saturation counts: a1=%d a2=%d a3=%d\n",
-       (int)st.a1_sat, (int)st.a2_sat, (int)st.a3_sat);
-
-#else
-  // Single demo run 
-  float T = 30.9f;
-  float H = 50.0f;
-
-  LOGI("Input: T=%d(x1e-2)  H=%d(x1e-2)\n",
-       (int)float_to_scaled_int(T, 100.0f),
-       (int)float_to_scaled_int(H, 100.0f));
-
-  
-  float x0 = T / 35.0f;
-  float x1 = H / 100.0f;
-  LOGI("x_norm (x1e-5): [%d, %d]\n",
-       (int)float_to_scaled_int(x0, 100000.0f),
-       (int)float_to_scaled_int(x1, 100000.0f));
-
-  float prob = 0.0f;
-  int cls = 0;
-
-  //this run is the original run 
-  int rc = nn_infer_fixed_accel(T, H, &prob, &cls, &st);
-  if (rc != 0) {
-    LOGE("Inference failed (timeouts=%d)\n", (int)st.accel_timeouts);
-  } else {
-    LOGI("Output: prob=%d(x1e-5)  class=%d (%s)\n",
-         (int)float_to_scaled_int(prob, 100000.0f),
-         cls,
-         (cls ? "COMFORTABLE" : "NOT COMFORTABLE"));
-
-  
-    LOGI("PROOF: maxdiff(L2/L3/L4)=%d/%d/%d  timeouts=%d\n",
-         (int)st.max_abs_diff_l2, (int)st.max_abs_diff_l3, (int)st.max_abs_diff_l4,
-         (int)st.accel_timeouts);
+  // Final accuracy report
+  LOGI("NN ENGINE REPORT\n");
+  LOGI("NUMBER OF ITERATIONS:  %d\n", (int)PERF_ITERS);
+  LOGI("Saturation counts: a1=%d a2=%d a3=%d\n",(int)st.a1_sat, (int)st.a2_sat, (int)st.a3_sat);
+  int accuracy_x100 = (correct * 10000) / TEST_SET_SIZE;
+  LOGI("ACCURACY RESULT: %d / %d correct\n",
+       correct, (int)TEST_SET_SIZE);
+  LOGI("ACCURACY: %d.%d\n",
+       accuracy_x100 / 100,
+       accuracy_x100 % 100);
+  LOGI("CONFUSION: TP=%d TN=%d FP=%d FN=%d\n", TP, TN, FP, FN);
+  if (st.max_abs_diff_l2 == 0 && st.max_abs_diff_l3 == 0 && st.max_abs_diff_l4 == 0) {
+  LOGI("CPU and NN Engine match: maxdiff(L2/L3/L4)=%d/%d/%d (cpu vs accel)\n", (int)st.max_abs_diff_l2, (int)st.max_abs_diff_l3, (int)st.max_abs_diff_l4);
   }
+
 
 #if PERF_ENABLE
   uint32_t accel_total_cycles = 0;
@@ -153,9 +111,10 @@ int main(void) {
   int perf_cls = 0;
   int rc_perf = 0;
 
-  //this run is for performance metrics measurement purely
   uint32_t t0 = rdcycle();
-  for (int i = 0; i < PERF_ITERS; i++) {
+  for (int i = 0; i < TEST_SET_SIZE; i++) {
+    float T = (float)test_T_q[i] / (float)TEST_INPUT_Q_SCALE;
+    float H = (float)test_H_q[i] / (float)TEST_INPUT_Q_SCALE;
     rc_perf = nn_infer_fixed_accel_perf(T, H, &perf_prob, &perf_cls, NULL);
     if (rc_perf != 0) break;
   }
@@ -163,14 +122,15 @@ int main(void) {
 
   if (rc_perf == 0) {
     accel_total_cycles = t1 - t0;
-    accel_cycles_per_iter = accel_total_cycles / PERF_ITERS;
+    accel_cycles_per_iter = accel_total_cycles / TEST_SET_SIZE;
   } else {
     LOGE("PERF accel failed (rc=%d)\n", rc_perf);
   }
 
-  //this run is for performance metrics measurement purely
   t0 = rdcycle();
-  for (int i = 0; i < PERF_ITERS; i++) {
+  for (int i = 0; i < TEST_SET_SIZE; i++) {
+    float T = (float)test_T_q[i] / (float)TEST_INPUT_Q_SCALE;
+    float H = (float)test_H_q[i] / (float)TEST_INPUT_Q_SCALE;
     rc_perf = nn_infer_fixed_cpu_perf(T, H, &perf_prob, &perf_cls, NULL);
     if (rc_perf != 0) break;
   }
@@ -178,7 +138,7 @@ int main(void) {
 
   if (rc_perf == 0) {
     cpu_total_cycles = t1 - t0;
-    cpu_cycles_per_iter = cpu_total_cycles / PERF_ITERS;
+    cpu_cycles_per_iter = cpu_total_cycles / TEST_SET_SIZE;
   } else {
     LOGE("PERF cpu failed (rc=%d)\n", rc_perf);
   }
@@ -188,22 +148,61 @@ int main(void) {
     int32_t cpu_cyc_per_mac_x100 = (int32_t)((cpu_cycles_per_iter * 100u) / MACS_PER_INFER);
     int32_t speedup_x100 = (int32_t)((cpu_cycles_per_iter * 100u) / accel_cycles_per_iter);
 
-    LOGP("Mode: ACCEL\n");
-    LOGP("Iterations: %d\n", (int)PERF_ITERS);
-    LOGP("Total cycles: %d\n", (unsigned long)accel_total_cycles);
-    LOGP("Cycles / inference: %d\n", (unsigned long)accel_cycles_per_iter);
-    LOGP("Cycles / MAC: %d(x1e-2)\n", (int)accel_cyc_per_mac_x100);
+    
+    LOGI("Total cycles (NN ENGINE): %u\n", (unsigned)accel_total_cycles);
+    LOGI("Cycles / inference (NN ENGINE): %u\n", (unsigned)accel_cycles_per_iter);
+    LOGI("Cycles / MAC (NN ENGINE): %d(x1e-2)\n", (int)accel_cyc_per_mac_x100);
 
-    LOGP("Mode: CPU\n");
-    LOGP("Iterations: %d\n", (int)PERF_ITERS);
-    LOGP("Total cycles: %d\n", (unsigned long)cpu_total_cycles);
-    LOGP("Cycles / inference: %d\n", (unsigned long)cpu_cycles_per_iter);
-    LOGP("Cycles / MAC: %d(x1e-2)\n", (int)cpu_cyc_per_mac_x100);
+    LOGI("Total cycles (CPU): %u\n", (unsigned)cpu_total_cycles);
+    LOGI("Cycles / inference (CPU): %u\n", (unsigned)cpu_cycles_per_iter);
+    LOGI("Cycles / MAC (CPU): %d(x1e-2)\n", (int)cpu_cyc_per_mac_x100);
 
-    LOGP("Speedup: %d(x1e-2)x\n", (int)speedup_x100);
+    LOGI("Achieved Speedup: %d(x1e-2)x\n", (int)speedup_x100);
+
   }
 #endif
+
 #endif
+
+
+
+
+  float T = 35.9f;
+  float H = 90.0f;
+
+  LOGI("Input: T=%d(x1e-2)  H=%d(x1e-2)\n",
+       (int)float_to_scaled_int(T, 100.0f),
+       (int)float_to_scaled_int(H, 100.0f));
+
+  float x0 = T / 35.0f;
+  float x1 = H / 100.0f;
+  LOGI("x_norm (x1e-5): [%d, %d]\n",
+       (int)float_to_scaled_int(x0, 100000.0f),
+       (int)float_to_scaled_int(x1, 100000.0f));
+
+  float prob = 0.0f;
+  int cls = 0;
+
+  //this run is the original run 
+  int rc = nn_infer_fixed_accel(T, H, &prob, &cls, &st);
+
+
+  if (rc != 0) {
+    LOGE("Inference failed (timeouts=%d)\n", (int)st.accel_timeouts);
+  } else {
+    LOGI("Output: prob=%d(x1e-5)  class=%d (%s)\n",
+         (int)float_to_scaled_int(prob, 100000.0f),
+         cls,
+         (cls ? "COMFORTABLE" : "NOT COMFORTABLE"));
+
+    if (st.max_abs_diff_l2 == 0 && st.max_abs_diff_l3 == 0 && st.max_abs_diff_l4 == 0) {
+      LOGI("PROOF: no difference between CPU and accelerator intermediate values\n");
+    } else {
+      LOGI("PROOF: maxdiff(L2/L3/L4)=%d/%d/%d (cpu vs accel)\n",
+           (int)st.max_abs_diff_l2, (int)st.max_abs_diff_l3, (int)st.max_abs_diff_l4);
+    }
+  }
+
 
   while (1) { ; }
   return 0;

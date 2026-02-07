@@ -33,7 +33,8 @@ static void gemm_i16_cpu(const int16_t* A, int M, int K, //This function has bee
 static const float A0_S = 1.0f / 32768.0f; // Q15 input
 static const float A1_S = 1.0f / 8192.0f;  // Q13
 static const float A2_S = 1.0f / 8192.0f;  // Q13
-static const float A3_S = 1.0f / 8192.0f;  // Q13
+static const float A3_S = 1.0f / 2048.0f;   // 4× bigger than before
+  // Q13
 
 static inline int16_t sat_i16(int32_t x) {
   if (x >  32767) return  32767;
@@ -152,7 +153,7 @@ int nn_infer_fixed_accel(float T, float H, float* out_prob, int* out_cls, nn_sta
   int32_t z1_q[16];
   for (int j = 0; j < 16; j++) z1_q[j] = C1[0*16 + j];
 
-  LOGI("L1 GEMM: M=4 K=4 N=16 (x padded 2->4)\n");
+  LOGD("L1 GEMM: M=4 K=4 N=16 (x padded 2->4)\n");
   LOGD("L1 z1_q sample (first 8):\n");
   for (int j = 0; j < 8; j++) LOGD("  z1_q[%d]=%d\n", j, (long)z1_q[j]);
 
@@ -197,7 +198,7 @@ int nn_infer_fixed_accel(float T, float H, float* out_prob, int* out_cls, nn_sta
 #endif
 
   if (st && max_abs_diff2 > st->max_abs_diff_l2) st->max_abs_diff_l2 = max_abs_diff2;
-  LOGI("L2 GEMM: M=4 K=16 N=16  accel-vs-cpu MAX|diff|=%d\n", (long)max_abs_diff2);
+  LOGD("L2 GEMM: M=4 K=16 N=16  accel-vs-cpu MAX|diff|=%d\n", (long)max_abs_diff2);
 
   int16_t a2_q[16];
   for (int j = 0; j < L2_DIM; j++) {
@@ -240,7 +241,7 @@ int nn_infer_fixed_accel(float T, float H, float* out_prob, int* out_cls, nn_sta
 #endif
 
   if (st && max_abs_diff3 > st->max_abs_diff_l3) st->max_abs_diff_l3 = max_abs_diff3;
-  LOGI("L3 GEMM: M=4 K=16 N=8   accel-vs-cpu MAX|diff|=%d\n", (long)max_abs_diff3);
+  LOGD("L3 GEMM: M=4 K=16 N=8   accel-vs-cpu MAX|diff|=%d\n", (long)max_abs_diff3);
 
   int16_t a3_q[8];
   for (int j = 0; j < L3_DIM; j++) {
@@ -282,7 +283,7 @@ int nn_infer_fixed_accel(float T, float H, float* out_prob, int* out_cls, nn_sta
 #endif
 
   if (st && max_abs_diff4 > st->max_abs_diff_l4) st->max_abs_diff_l4 = max_abs_diff4;
-  LOGI("L4 GEMM: M=4 K=8 N=4    accel-vs-cpu |diff(z4[0])|=%d\n", (long)max_abs_diff4);
+  LOGD("L4 GEMM: M=4 K=8 N=4    accel-vs-cpu |diff(z4[0])|=%d\n", (long)max_abs_diff4);
 
   // Add bias then sigmoid
   int32_t b4q0 = bias_f_to_i32(b4[0], A3_S, s4);
@@ -322,7 +323,7 @@ int nn_infer_fixed_accel(float T, float H, float* out_prob, int* out_cls, nn_sta
   }
 #endif
 
-  int cls = (y0 >= 0.5f) ? 1 : 0;
+  int cls = (y0 >= 0.65f) ? 1 : 0;
   *out_prob = y0;
   *out_cls  = cls;
 
