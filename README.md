@@ -131,6 +131,21 @@ Speedup = (CPU cycles per inference) / (Accelerator cycles per inference)
 
 ---
 
+# Acknowledgments
+
+This project is built upon the **NEORV32 open-source RISC-V processor**
+developed by **Stephan Nolting**.
+
+NEORV32 is licensed under the **BSD 3-Clause License** and is used in this
+project as the base soft-core CPU platform. The processor core and supporting
+infrastructure are integrated and extended with a custom hardware accelerator
+for fixed-point neural network inference.
+
+Original NEORV32 repository:
+https://github.com/stnolting/neorv32
+
+This project is an academic **Final Year Project (FYP)** and is **not affiliated
+with or endorsed by the NEORV32 project**.
 
 
 
