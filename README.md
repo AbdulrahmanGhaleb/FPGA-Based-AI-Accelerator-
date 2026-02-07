@@ -1,21 +1,22 @@
 # Overview
+This project is  my **Final Year Project (FYP)** for the **Bachelor of Electronics Engineering Majoring in Computer**.
 
-This repository contains my **Final Year Project (FYP)** for the **Bachelor of Electronics Engineering**.
-The project demonstrates an **end-to-end embedded neural-network inference system**, combining:
-
-* Embedded systems design
-* FPGA hardware design using **VHDL**
-* **RISC-V (NEORV32)** processor integration
-* Bare-metal **C firmware development**
-* Hardware–software interface design
-* Fixed-point AI inference acceleration
+It implements a fixed-point neural network inference engine as a custom hardware accelerator integrated within a NEORV32 RISC-V soft-core processor on an Intel Cyclone IV FPGA. The accelerator offloads compute-intensive matrix operations from the CPU using a tiled 4×4 combinational matrix multiplication architecture, coordinated by a finite state machine and accessed through a memory-mapped custom function subsystem (CFS) interface. Neural network inference is performed entirely in fixed-point arithmetic, with int16 weights, Q-format inputs and int32 accumulation,. The system demonstrates a complete hardware-software co-design flow, including RTL design, firmware control, BRAM-based data movement, simulation-based verification, and on-FPGA evaluation of AI workload acceleration.
 
 The developed inference engine is **generic and reusable** for many embedded AI use cases.
-For demonstration and validation, it is applied to a **weather comfort classification system**, where **temperature and humidity inputs** are processed to produce a comfort classification.
+For demonstration and validation, it is applied to a **weather comfort classification system**, where **temperature and humidity inputs** are processed to produce a comfort classification (comfortable/uncomfortable).
 
-![System Block Diagram](SystemArchitecture.png)
+
 
 ---
+# System Overview
+Platform:
+* FPGA: Intel Cyclone IV
+* Processor: Sotcore RISC-V (NEORV32)
+* Languages: VHDL, C, Python
+* Tools: Quartus, ModelSim, WSL, GCC, TeraTerm,
+
+![System Block Diagram](SystemArchitecture.png) 
 
 # Neural Network Details
 
@@ -42,95 +43,19 @@ The inference engine is implemented as a **custom hardware accelerator** integra
 
 ## Core Modules (High Level)
 
-* **Matrix Multiplier (mm4x4)**
-
-  * Purely combinational **4×4 matrix multiplier**
-  * Unpacks bus data into matrices, performs multiplication, and packs results back
-  * 4×4 size chosen to balance **DSP usage, timing, and FPGA resource limits**
-
-* **Tiling & Buffering**
-
-  * Larger matrices (up to 16×16) are processed using **4×4 tiling**
-  * Intermediate results are accumulated using **tile buffers**
-  * This approach scales to any dimension that is a multiple of 4
-
-* **FSM Controller**
-
-  * Coordinates all accelerator operations
-  * Controls memory access, tiling sequence, accumulation, and completion
-  * Clearly observable through simulation waveforms
-
-* **Memory Interface**
-
-  * Handles BRAM read/write operations
-  * Streams data into tile buffers and retrieves computed results
-
-* **NEORV32 CFS Interface**
-
-  * Custom hardware–software interface
-  * Memory-mapped registers for configuration, control, and status
-  * Allows full control from C firmware
-
-Understanding the accelerator operation is easiest by examining **testbench waveforms**, particularly from `tb2` and `tb3`.
+* **Matrix Multiplier (mm4x4):** Fully combinational 4×4 matrix multiplier optimized for DSP efficiency and FPGA timing constraints.
+* **Tiling & Buffering:** Scales matrix operations up to 16×16 using 4×4 tiles with buffered accumulation.
+* **FSM Controller:** Central control logic orchestrating tiling, memory access, accumulation, and execution flow.
+* **Memory Interface:** Manages BRAM data movement between memory and tile buffers for compute operations.
+* **NEORV32 CFS Interface:** Memory-mapped hardware–software interface enabling full accelerator control from RISC-V firmware.
 
 ---
 
-# Testbenches
 
-The repository includes multiple **VHDL testbenches** that verify:
-
-* Register interface correctness
-* FSM sequencing and state transitions
-* BRAM read/write behavior
-* Tiling and accumulation correctness
-* Numerical correctness of matrix multiplication
-
-These testbenches provide **cycle-accurate visibility** into the accelerator and were essential for validation.
-
----
 
 # Quantization Strategy
 
-The entire neural network operates in **fixed-point arithmetic**.
-
-* **Weights:**
-
-  * Quantized to **int16** directly in Python during export
-* **Inputs (Temperature & Humidity):**
-
-  * Quantized in firmware to **Q15**
-* **Accumulation:**
-
-  * Performed in **int32** for numerical safety
-* **Layer Outputs:**
-
-  * Requantized from int32 → int16 after each layer
-
-### Q-Format Choice
-
-* **Early layers:** higher precision (e.g. Q15)
-* **Later layers:** wider dynamic range (e.g. Q13)
-
-This trade-off preserves accuracy while preventing overflow.
-
----
-
-# Padding
-
-The accelerator processes matrices whose dimensions are **multiples of 4**.
-
-Padding is applied in firmware:
-
-* Vectors or matrices are extended with zeros
-* Padding affects columns (and rows where required)
-* Example:
-
-  ```
-  x = [x1, x2]
-  x_padded = [x1, x2, 0, 0]
-  ```
-
-This ensures compatibility with the tiled hardware design.
+This project employs a fixed-point quantization strategy to enable efficient neural network inference on FPGA hardware, replacing floating-point operations with resource efficient integer arithmetic. Different Q-formats are used across network layers such as higher precision in early layers and wider dynamic range in later layers, achieving a practical balance between accuracy, overflow prevention, and FPGA resource utilization, making the design suitable for real-time embedded AI acceleration.
 
 ---
 
@@ -146,147 +71,67 @@ The **bare-metal C firmware** running on the NEORV32 CPU is responsible for:
 * Applying bias addition and activation functions (ReLU, Sigmoid)
 * Printing results via UART
 
-Bias addition and activation functions are intentionally kept in software, as they are **computationally inexpensive** compared to matrix multiplication.
+---
+
+
+# Compile-Time Logging Modes
+
+The firmware implements a **compile-time configurable UART-based framework** for debugging, validation, and performance evaluation. Logging modes are selected at compile time to keep runtime behavior deterministic and prevent UART flooding.
+
+* **INFO** – Minimal, high-level output intended for demos and reporting (accuracy and performance results)
+* **DEBUG** – Detailed diagnostic output for verification (intermediate activations, CPU vs accelerator comparisons)
 
 ---
 
-# UART Debugging & Compile-Time Logging
+# Results
 
-To validate correctness and numerical accuracy, the **neural-network inference was also executed entirely on the NEORV32 CPU** running on the FPGA.
-These CPU results serve as **ground-truth benchmarks**, against which the **hardware accelerator outputs are compared**.
-
-For this project, **zero numerical difference** was observed between:
-
-* CPU-based inference results
-* Accelerator-based inference results
-
-The comparison focuses on **layer activations (post matrix multiplication)** and final outputs.
-
-
-
-## Compile-Time Logging Modes
-
-A **UART-based debugging and logging system** was implemented in the firmware.
-This system is **configurable at compile time**, allowing different levels of verbosity without modifying runtime code.
-
-### INFO Mode
-
-* Minimal, human-readable output
-* Prints:
-
-  * Input values
-  * Final layer outputs / predictions
-  * High-level inference status
-* Intended for:
-
-  * Live demos
-  * Clean result presentation
-  * Avoiding UART flooding
-
-### DEBUG Mode
-
-* Detailed diagnostic output
-* Prints:
-
-  * Intermediate layer activations
-  * Accelerator vs CPU comparison results
-  * Maximum absolute differences (if any)
-* Intended for:
-
-  * Verification
-  * Numerical validation
-  * Debugging accelerator behavior
-
-This separation ensures **clean demos** while still supporting **deep technical inspection** when needed.
-
----
-
-## Stress-Test Mode
-
-A dedicated **stress-test mode** was also implemented to further validate robustness.
-
-In this mode:
-
-* The neural network inference is executed for a **user-defined number of iterations**
-* Each iteration uses **different input values**
-* Outputs from the accelerator are continuously compared against CPU results
-* Any mismatch or numerical error is recorded and reported via UART
-
-This mode provides additional confidence in:
-
-* Numerical stability
-* Fixed-point correctness
-* Hardware–software consistency across repeated executions
-
----
-
-## Performance Measurement (PERF Mode)
-
-In addition to functional validation, a **performance instrumentation mode (PERF)** was introduced to quantitatively evaluate execution efficiency.
-
-When enabled:
-
-* Hardware cycle counters are used to measure total execution cycles
-* Performance metrics are computed and reported via UART, including:
-
-  * Total cycle count
-  * Cycles per inference
-  * Cycles per MAC (Multiply–Accumulate)
-  * Accelerator speedup relative to CPU execution
-
-PERF mode is designed to be:
-
-* Non-intrusive (no impact on functional correctness)
-* Compile-time configurable
-* Consistent across CPU and accelerator runs
-
-By normalizing results using **cycles per MAC**, the performance evaluation remains independent of network size and provides a fair, architecture-agnostic comparison between software and hardware execution.
-
----
-
-## Results
-
-### Functional Correctness
-
-Accelerator outputs matched the CPU reference results **exactly**.
-
-No numerical discrepancies were observed across:
-
-* Individual inference runs
-* Stress-test iterations
-
-This validates:
-
-* Correct tiling and accumulation behavior
-* Correct fixed-point quantization strategy
-* Correct hardware–software integration via NEORV32 CFS
-
----
-
-### Performance
-
-A dedicated **`[PERF]` UART mode** was added to measure cycle-accurate performance using the RISC-V `MCYCLE` counter.
-Measurements were taken over **1000 inference iterations** to ensure stable and repeatable results.
+The primary reported metrics are **classification accuracy** and **accelerator speedup**, printed via UART when running in **INFO mode**.
 
 ```
-[PERF] Mode: ACCEL
-[PERF] Iterations: 1000
-[PERF] Total cycles: 541,559,011
-[PERF] Cycles / inference: 541,559
-[PERF] Cycles / MAC: 282.06
-
-[PERF] Mode: CPU
-[PERF] Iterations: 1000
-[PERF] Total cycles: 1,453,117,011
-[PERF] Cycles / inference: 1,453,117
-[PERF] Cycles / MAC: 756.83
-
-[PERF] Speedup: 2.68×
+[INF] NN ENGINE REPORT
+[INF] Saturation counts: a1=0 a2=0 a3=0
+[INF] ACCURACY RESULT: 480 / 500 correct
+[INF] ACCURACY: 96.0
+[INF] CONFUSION: TP=82 TN=398 FP=4 FN=16
+[INF] CPU and NN Engine match: maxdiff(L2/L3/L4)=0/0/0 (cpu vs accel)
+[INF] Total cycles (NN ENGINE): 308288726
+[INF] Cycles / inference (NN ENGINE): 616577
+[INF] Cycles / MAC (NN ENGINE): 32113 (×1e-2)
+[INF] Total cycles (CPU): 764067726
+[INF] Cycles / inference (CPU): 1528135
+[INF] Cycles / MAC (CPU): 79590 (×1e-2)
+[INF] Achieved Speedup: 2.47×
 ```
 
-The accelerator achieves a **2.68× speedup** over the CPU-only implementation, reducing both **total execution cycles** and **cycles per MAC**.
-Reported values include **full system overhead** (control, memory access, accumulation, and write-back), reflecting realistic end-to-end performance rather than isolated compute throughput.
+---
+
+# Functional Validation & Accuracy
+
+The script `scripts/test_dataset.py` generates **500 unique temperature–humidity samples**, with ground-truth labels computed from the analytical decision equation.
+These same samples are processed by the hardware inference engine, and predicted labels are compared against the Python reference.
+
+Accuracy is computed as:
+
+```
+Accuracy = (correct_predictions / total_samples) × 100
+```
 
 ---
+
+# Performance Measurement
+
+Performance is evaluated by measuring execution cycles for both **CPU-only** and **hardware-accelerated** inference using hardware cycle counters. Identical workloads are used to ensure a fair comparison.
+
+Speedup is computed as:
+
+```
+Speedup = (CPU cycles per inference) / (Accelerator cycles per inference)
+```
+
+
+---
+
+
+
 
 
