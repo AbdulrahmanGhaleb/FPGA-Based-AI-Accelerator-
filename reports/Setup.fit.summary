@@ -1,0 +1,20 @@
+Fitter Status : Successful - Mon Feb 09 00:56:07 2026
+Quartus Prime Version : 20.1.1 Build 720 11/11/2020 SJ Lite Edition
+Revision Name : Setup
+Top-level Entity Name : neorv32_test_setup_bootloader
+Family : Cyclone IV GX
+Device : EP4CGX150DF31C7
+Timing Models : Final
+Total logic elements : 28,110 / 149,760 ( 19 % )
+    Total combinational functions : 18,591 / 149,760 ( 12 % )
+    Dedicated logic registers : 19,573 / 149,760 ( 13 % )
+Total registers : 19573
+Total pins : 12 / 508 ( 2 % )
+Total virtual pins : 0
+Total memory bits : 370,688 / 6,635,520 ( 6 % )
+Embedded Multiplier 9-bit elements : 140 / 720 ( 19 % )
+Total GXB Receiver Channel PCS : 0 / 8 ( 0 % )
+Total GXB Receiver Channel PMA : 0 / 8 ( 0 % )
+Total GXB Transmitter Channel PCS : 0 / 8 ( 0 % )
+Total GXB Transmitter Channel PMA : 0 / 8 ( 0 % )
+Total PLLs : 0 / 8 ( 0 % )
