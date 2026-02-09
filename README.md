@@ -1,7 +1,5 @@
 # Overview
-This project is  my **Final Year Project (FYP)** for the **Bachelor of Electronics Engineering Majoring in Computer**.
-
-It implements a fixed-point neural network inference engine as a custom hardware accelerator integrated within a NEORV32 RISC-V soft-core processor on an Intel Cyclone IV FPGA. The accelerator offloads compute-intensive matrix operations from the CPU using a tiled 4×4 combinational matrix multiplication architecture, coordinated by a finite state machine and accessed through a memory-mapped custom function subsystem (CFS) interface. Neural network inference is performed entirely in fixed-point arithmetic, with int16 weights, Q-format inputs and int32 accumulation,. The system demonstrates a complete hardware-software co-design flow, including RTL design, firmware control, BRAM-based data movement, simulation-based verification, and on-FPGA evaluation of AI workload acceleration.
+This project implements a fixed-point neural network inference engine as a custom hardware accelerator integrated within a NEORV32 RISC-V soft-core processor on an Intel Cyclone IV FPGA. The accelerator offloads compute-intensive matrix operations from the CPU using a tiled 4×4 combinational matrix multiplication architecture, coordinated by a finite state machine and accessed through a memory-mapped custom function subsystem (CFS) interface. Neural network inference is performed entirely in fixed-point arithmetic, with int16 weights, Q-format inputs and int32 accumulation,. The system demonstrates a complete hardware-software co-design flow, including RTL design, firmware control, BRAM-based data movement, simulation-based verification, and on-FPGA evaluation of AI workload acceleration.
 
 The developed inference engine is **generic and reusable** for many embedded AI use cases.
 For demonstration and validation, it is applied to a **weather comfort classification system**, where **temperature and humidity inputs** are processed to produce a comfort classification (comfortable/uncomfortable).
@@ -131,6 +129,21 @@ Speedup = (CPU cycles per inference) / (Accelerator cycles per inference)
 
 ---
 
+# Acknowledgments
+
+This project is built upon the **NEORV32 open-source RISC-V processor**
+developed by **Stephan Nolting**.
+
+NEORV32 is licensed under the **BSD 3-Clause License** and is used in this
+project as the base soft-core CPU platform. The processor core and supporting
+infrastructure are integrated and extended with a custom hardware accelerator
+for fixed-point neural network inference.
+
+Original NEORV32 repository:
+https://github.com/stnolting/neorv32
+
+This project is an academic **Final Year Project (FYP)** and is **not affiliated
+with or endorsed by the NEORV32 project**.
 
 
 
